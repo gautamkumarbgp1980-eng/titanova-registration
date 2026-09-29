@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TITANOVA Slot Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+
+<style>
+body{
+    margin:0;
+    background:#111;
+    color:white;
+    font-family:Arial,sans-serif;
+}
+.container{
+    max-width:700px;
+    margin:20px auto;
+    padding:20px;
+}
+.card{
+    background:#202020;
+    border-radius:18px;
+    padding:20px;
+    margin-bottom:18px;
+    box-shadow:0 0 20px rgba(255,190,0,.15);
+}
+h1{
+    color:#f5b400;
+    text-align:center;
+}
+button{
+    width:100%;
+    padding:15px;
+    border:0;
+    border-radius:12px;
+    background:#f5b400;
+    color:#111;
+    font-size:18px;
+    font-weight:bold;
+    margin:8px 0;
+}
+.info{
+    font-size:16px;
+    line-height:1.8;
+}
+.level-title{
+    color:#f5b400;
+    font-size:20px;
+    font-weight:bold;
+    margin-bottom:12px;
+}
+.slots{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:7px;
+}
+.slot{
+    height:42px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:8px;
+    background:#333;
+    color:#aaa;
+    font-weight:bold;
+}
+.slot.filled{
+    background:#f5b400;
+    color:#111;
+}
+.small{
+    color:#aaa;
+    font-size:13px;
+    word-break:break-all;
+}
+#status{
+    color:#00ff88;
+    text-align:center;
+    margin:10px 0;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="card">
+<h1>⚡ TITANOVA</h1>
+<p style="text-align:center;">Slot Dashboard</p>
+
+<button onclick="connectWallet()">Connect Wallet</button>
+
+<div id="status">Wallet not connected</div>
+
+<div class="info">
+<b>Wallet:</b>
+<div id="wallet">-</div>
+
+<b>User ID:</b>
+<div id="userid">-</div>
+
+<b>Team Size:</b>
+<div id="team">-</div>
+
+<b>Total Income:</b>
+<div id="income">-</div>
+</div>
+</div>
+
+<div id="levels"></div>
+
+</div>
+
+<script>
+
+const CONTRACT_ADDRESS =
+"0x1Dc24B48364cE513397db87C71708d722bfABcc1";
+
+const ABI = [
+"function getUserId(address account) view returns (uint256)",
+"function getUserDetails(uint256 userId) view returns (address userAddress,address referrer,uint256 referrerId,uint256 directCount,uint8 activeLevelCount,uint256 teamSize,uint256 registrationTimestamp,uint256 totalIncome)",
+"function getMatrix(address account,uint8 level) view returns (address currentReferrer,uint256 referralCount,uint256 reinvestCount,uint256 heldTokenForUpgrade,uint256 totalTeamSize,uint256 totalEarning)"
+];
+
+let provider;
+let signer;
+let contract;
+let account;
+
+async function connectWallet(){
+
+    try{
+
+        if(!window.ethereum){
+            alert("Please open this page inside a Web3 wallet browser.");
+            return;
+        }
+
+        provider = new ethers.BrowserProvider(window.ethereum);
+
+        await provider.send("eth_requestAccounts", []);
+
+        signer = await provider.getSigner();
+        account = await signer.getAddress();
+
+        contract = new ethers.Contract(
+            CONTRACT_ADDRESS,
+            ABI,
+            provider
+        );
+
+        document.getElementById("wallet").innerText = account;
+
+        document.getElementById("status").innerText =
+            "Wallet Connected";
+
+        await loadDashboard();
+
+    }catch(error){
+
+        console.log(error);
+
+        document.getElementById("status").innerText =
+            "Connection failed";
+
+        alert(error.message || error);
+
+    }
+}
+
+async function loadDashboard(){
+
+    try{
+
+        const userId = await contract.getUserId(account);
+
+        if(userId == 0n){
+
+            document.getElementById("status").innerText =
+                "This wallet is not registered.";
+
+            return;
+        }
+
+        const details =
+            await contract.getUserDetails(userId);
+
+        document.getElementById("userid").innerText =
+            userId.toString();
+
+        document.getElementById("team").innerText =
+            details[5].toString();
+
+        document.getElementById("income").innerText =
+            details[7].toString();
+
+        await loadLevels();
+
+    }catch(error){
+
+        console.log(error);
+
+        document.getElementById("status").innerText =
+            "Unable to load dashboard.";
+
+    }
+}
+
+async function loadLevels(){
+
+    const levelsDiv =
+        document.getElementById("levels");
+
+    levelsDiv.innerHTML = "";
+
+    for(let level = 1; level <= 12; level++){
+
+        try{
+
+            const matrix =
+                await contract.getMatrix(account, level);
+
+            const referralCount =
+                Number(matrix[1]);
+
+            const card =
+                document.createElement("div");
+
+            card.className = "card";
+
+            card.innerHTML = `
+                <div class="level-title">
+                    LEVEL ${level}
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    Filled: ${referralCount} / 14
+                </div>
+
+                <div class="slots" id="slots-${level}">
+                </div>
+
+                <div class="small">
+                    Reinvest: ${matrix[2].toString()}
+                </div>
+            `;
+
+            levelsDiv.appendChild(card);
+
+            const slots =
+                document.getElementById(`slots-${level}`);
+
+            for(let i = 1; i <= 14; i++){
+
+                const slot =
+                    document.createElement("div");
+
+                slot.className = "slot";
+
+                if(i <= referralCount){
+                    slot.classList.add("filled");
+                }
+
+                slot.innerText = i;
+
+                slots.appendChild(slot);
+            }
+
+        }catch(error){
+
+            console.log(
+                "Level " + level + " error:",
+                error
+            );
+
+        }
+    }
+}
+
+</script>
+
+</body>
+</html>
