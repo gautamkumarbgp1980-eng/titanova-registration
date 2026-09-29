@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TITANOVA Registration</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    .box {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 28px;
+      background: #1d1d1d;
+      border-radius: 20px;
+      box-shadow: 0 0 25px rgba(255, 193, 7, 0.15);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      color: #fff;
+    }
+
+    .network {
+      color: #bbb;
+      margin-bottom: 25px;
+    }
+
+    label {
+      display: block;
+      margin: 12px 0 7px;
+      font-size: 18px;
+    }
+
+    input {
+      width: 100%;
+      padding: 17px;
+      border-radius: 14px;
+      border: 2px solid #e5aa00;
+      font-size: 18px;
+      outline: none;
+      background: white;
+      color: #111;
+    }
+
+    button {
+      width: 100%;
+      padding: 17px;
+      margin-top: 14px;
+      border: none;
+      border-radius: 14px;
+      background: #e5aa00;
+      color: #111;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin-top: 22px;
+      padding: 15px;
+      background: #292929;
+      border-radius: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .address {
+      font-size: 13px;
+      color: #aaa;
+      margin-top: 10px;
+      word-break: break-all;
+    }
+
+    .success {
+      color: #55e681;
+    }
+
+    .error {
+      color: #ff6b6b;
+    }
+
+    .info {
+      color: #ffd45c;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="box">
+
+  <h1>TITANOVA Registration</h1>
+
+  <div class="network">
+    BNB Smart Chain Testnet
+  </div>
+
+  <button id="connectBtn" onclick="connectWallet()">
+    Connect Wallet
+  </button>
+
+  <div class="address" id="walletAddress"></div>
+
+  <label for="referrer">
+    Referrer ID
+  </label>
+
+  <input
+    id="referrer"
+    type="number"
+    min="1"
+    placeholder="Enter Referrer ID"
+  >
+
+  <button id="approveBtn" onclick="approveToken()" disabled>
+    Approve 0.001 BTCB
+  </button>
+
+  <button id="registerBtn" onclick="registerUser()" disabled>
+    Register
+  </button>
+
+  <div class="status" id="status">
+    Connect your wallet to begin.
+  </div>
+
+</div>
+
+<script>
+
+  /* ==============================
+     TITANOVA CONTRACT SETTINGS
+     ============================== */
+
+  const CORE_ADDRESS =
+    "0x1Dc24B48364cE513397db87C71708d722bfABcc1";
+
+  const BTCB_ADDRESS =
+    "0x6ce8dA28E2f864420840cF74474eFf5fD80E65B8";
+
+  const BSC_TESTNET_CHAIN_ID = 97;
+
+  const REGISTRATION_FEE =
+    ethers.parseUnits("0.001", 18);
+
+
+  /* ==============================
+     CONTRACT ABIs
+     ============================== */
+
+  const BTCB_ABI = [
+    "function approve(address spender,uint256 amount) external returns (bool)",
+    "function allowance(address owner,address spender) external view returns (uint256)",
+    "function balanceOf(address account) external view returns (uint256)",
+    "function decimals() external view returns (uint8)"
+  ];
+
+  const CORE_ABI = [
+    "function registration(uint256 referrerId) external",
+    "function getUserId(address account) external view returns (uint256)",
+    "function isUserExists(address account) external view returns (bool)",
+    "function getUserDetails(uint256 userId) external view returns (address userAddress,address referrer,uint256 referrerId,uint256 directCount,uint8 activeLevelCount,uint256 teamSize,uint256 registrationTimestamp,uint256 totalIncome)",
+    "function lastUserId() external view returns (uint256)"
+  ];
+
+
+  let provider;
+  let signer;
+  let btcb;
+  let core;
+  let currentAccount = null;
+
+
+  /* ==============================
+     STATUS
+     ============================== */
+
+  function setStatus(message, type = "") {
+
+    const status = document.getElementById("status");
+
+    status.className = "status " + type;
+
+    status.innerHTML = message;
+  }
+
+
+  /* ==============================
+     NETWORK
+     ============================== */
+
+  async function switchToBscTestnet() {
+
+    try {
+
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [
+          {
+            chainId: "0x61"
+          }
+        ]
+      });
+
+    } catch (error) {
+
+      if (error.code === 4902) {
+
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: "0x61",
+              chainName: "BNB Smart Chain Testnet",
+              nativeCurrency: {
+                name: "BNB",
+                symbol: "tBNB",
+                decimals: 18
+              },
+              rpcUrls: [
+                "https://data-seed-prebsc-1-s1.bnbchain.org"
+              ],
+              blockExplorerUrls: [
+                "https://testnet.bscscan.com"
+              ]
+            }
+          ]
+        });
+
+      } else {
+
+        throw error;
+
+      }
+    }
+  }
+
+
+  /* ==============================
+     CONNECT WALLET
+     ============================== */
+
+  async function connectWallet() {
+
+    try {
+
+      if (!window.ethereum) {
+
+        setStatus(
+          "Wallet not found. Open this page in TokenPocket or another Web3 wallet.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      setStatus("Connecting wallet...", "info");
+
+
+      await switchToBscTestnet();
+
+
+      provider = new ethers.BrowserProvider(window.ethereum);
+
+      await provider.send("eth_requestAccounts", []);
+
+      signer = await provider.getSigner();
+
+      currentAccount = await signer.getAddress();
+
+
+      btcb = new ethers.Contract(
+        BTCB_ADDRESS,
+        BTCB_ABI,
+        signer
+      );
+
+
+      core = new ethers.Contract(
+        CORE_ADDRESS,
+        CORE_ABI,
+        signer
+      );
+
+
+      document.getElementById("walletAddress").innerHTML =
+        "Wallet: " + currentAccount;
+
+
+      document.getElementById("approveBtn").disabled = false;
+
+      document.getElementById("registerBtn").disabled = false;
+
+
+      const balance = await btcb.balanceOf(currentAccount);
+
+      const formattedBalance =
+        ethers.formatUnits(balance, 18);
+
+
+      setStatus(
+        "Wallet connected.<br>" +
+        "BTCB Balance: " +
+        formattedBalance +
+        "<br><br>" +
+        "Enter Referrer ID to continue.",
+        "success"
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      setStatus(
+        "Wallet connection failed.<br><br>" +
+        getErrorMessage(error),
+        "error"
+      );
+
+    }
+  }
+
+
+  /* ==============================
+     APPROVE BTCB
+     ============================== */
+
+  async function approveToken() {
+
+    try {
+
+      if (!signer) {
+
+        setStatus(
+          "Please connect your wallet first.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      const referrerId =
+        document.getElementById("referrer").value.trim();
+
+
+      if (!referrerId || Number(referrerId) < 1) {
+
+        setStatus(
+          "Please enter a valid Referrer ID.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      const balance =
+        await btcb.balanceOf(currentAccount);
+
+
+      if (balance < REGISTRATION_FEE) {
+
+        setStatus(
+          "Insufficient BTCB balance.<br>" +
+          "Required: 0.001 BTCB",
+          "error"
+        );
+
+        return;
+      }
+
+
+      setStatus(
+        "Please confirm BTCB approval in your wallet...",
+        "info"
+      );
+
+
+      const tx =
+        await btcb.approve(
+          CORE_ADDRESS,
+          REGISTRATION_FEE
+        );
+
+
+      setStatus(
+        "Approval transaction submitted.<br>" +
+        "Waiting for confirmation...",
+        "info"
+      );
+
+
+      await tx.wait();
+
+
+      setStatus(
+        "Approval successful!<br><br>" +
+        "Now press Register.",
+        "success"
+      );
+
+
+    } catch (error) {
+
+      console.error(error);
+
+      setStatus(
+        "Approval failed.<br><br>" +
+        getErrorMessage(error),
+        "error"
+      );
+
+    }
+  }
+
+
+  /* ==============================
+     REGISTRATION
+     ============================== */
+
+  async function registerUser() {
+
+    try {
+
+      if (!signer) {
+
+        setStatus(
+          "Please connect your wallet first.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      const referrerId =
+        document.getElementById("referrer").value.trim();
+
+
+      if (!referrerId || Number(referrerId) < 1) {
+
+        setStatus(
+          "Please enter Referrer ID.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      const existing =
+        await core.isUserExists(currentAccount);
+
+
+      if (existing) {
+
+        const existingId =
+          await core.getUserId(currentAccount);
+
+
+        setStatus(
+          "This wallet is already registered.<br>" +
+          "Your User ID: " +
+          existingId.toString(),
+          "error"
+        );
+
+        return;
+      }
+
+
+      const allowance =
+        await btcb.allowance(
+          currentAccount,
+          CORE_ADDRESS
+        );
+
+
+      if (allowance < REGISTRATION_FEE) {
+
+        setStatus(
+          "BTCB approval is required first.<br>" +
+          "Press 'Approve 0.001 BTCB'.",
+          "error"
+        );
+
+        return;
+      }
+
+
+      setStatus(
+        "Please confirm registration in your wallet...",
+        "info"
+      );
+
+
+      const tx =
+        await core.registration(
+          BigInt(referrerId)
+        );
+
+
+      setStatus(
+        "Registration transaction submitted.<br>" +
+        "Waiting for blockchain confirmation...",
+        "info"
+      );
+
+
+      const receipt =
+        await tx.wait();
+
+
+      let newUserId = null;
+
+
+      try {
+
+        newUserId =
+          await core.getUserId(currentAccount);
+
+      } catch (e) {
+
+        console.log(e);
+
+      }
+
+
+      if (newUserId !== null) {
+
+        setStatus(
+          "<span class='success'>" +
+          "Registration Successful! 🎉" +
+          "</span><br><br>" +
+          "Your User ID: <b>" +
+          newUserId.toString() +
+          "</b><br><br>" +
+          "Referrer ID: " +
+          referrerId +
+          "<br><br>" +
+          "Transaction Hash:<br>" +
+          receipt.hash,
+          "success"
+        );
+
+      } else {
+
+        setStatus(
+          "Registration transaction confirmed successfully!<br><br>" +
+          "Transaction Hash:<br>" +
+          receipt.hash,
+          "success"
+        );
+
+      }
+
+
+    } catch (error) {
+
+      console.error(error);
+
+      setStatus(
+        "Registration failed.<br><br>" +
+        getErrorMessage(error),
+        "error"
+      );
+
+    }
+  }
+
+
+  /* ==============================
+     ERROR MESSAGE
+     ============================== */
+
+  function getErrorMessage(error) {
+
+    if (!error) {
+      return "Unknown error";
+    }
+
+
+    if (error.code === 4001) {
+      return "Transaction rejected in wallet.";
+    }
+
+
+    if (error.reason) {
+      return error.reason;
+    }
+
+
+    if (error.shortMessage) {
+      return error.shortMessage;
+    }
+
+
+    if (error.message) {
+      return error.message;
+    }
+
+
+    return "Transaction failed.";
+  }
+
+
+  /* ==============================
+     WALLET ACCOUNT CHANGE
+     ============================== */
+
+  if (window.ethereum) {
+
+    window.ethereum.on(
+      "accountsChanged",
+      function(accounts) {
+
+        if (accounts.length === 0) {
+
+          location.reload();
+
+        } else {
+
+          location.reload();
+
+        }
+
+      }
+    );
+
+
+    window.ethereum.on(
+      "chainChanged",
+      function() {
+
+        location.reload();
+
+      }
+    );
+
+  }
+
+</script>
+
+</body>
+</html>
